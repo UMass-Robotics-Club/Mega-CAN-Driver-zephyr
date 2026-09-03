@@ -1,4 +1,4 @@
-#!/Users/asritha/.local/pipx/venvs/pyocd/bin/python
+#!/usr/bin/env python3
 """
 flash.py -- program the Zephyr image to the PIC32CZ CA80 boot flash via pyOCD.
 

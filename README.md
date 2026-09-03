@@ -32,39 +32,32 @@ mega-can-fw/
 - **Timing**: uses real **`k_msleep()`** — the kernel timer works correctly
   when the app is booted normally (see "How this board boots").
 
+## Setup Workspace
+
+### venv
+First make a python virtual env 
+```
+# Using normal python (Note uv will not work for zephyr!)
+python3 -m venv .venv
+```
+
+Then activate it and install pyocd along with west (you can just use requirements.txt)
+```
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Zephyr
+To setup Zephyr follow the steps in the [Zephyr getting started guide](https://docs.zephyrproject.org/latest/develop/getting_started/index.html).
+
 ## Build & run
 
 ```
-./blink.sh                 # build + program the image
-./blink.sh -p always       # pristine rebuild + program
+
 ```
 
 Then **power-cycle the board** to run it (see "How this board boots").
 
-Or manually:
-
-```
-source .venv/bin/activate
-export PATH="$HOME/.local/bin:/opt/homebrew/bin:$PATH"
-export ZEPHYR_BASE="$PWD/zephyr"
-west build -b mega_can app
- ./flash.py                 # programs the image; then power-cycle to run
-```
-
-## Serial console (verified)
-
-The SERCOM0 UART console works at **115200 8N1** (TX=PC0). On this host the
-RPi Debug Probe's UART bridge is **`/dev/cu.usbmodem102`**. Monitor it with:
-
-```
-screen /dev/cu.usbmodem102 115200      # exit: Ctrl-A then K, then y
-```
-
-`printk()` and the boot banner go to this port.
-
-GOTCHA: the debug probe exposes CMSIS-DAP and the UART on the *same* USB
-device, and pyOCD flashing conflicts with an open serial port. **Close the
-serial monitor before `flash.py` / `west flash`, then reopen it.**
 
 ## How this board boots — IMPORTANT
 

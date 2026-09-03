@@ -1,1 +1,11 @@
 .venv
+
+# Exclude zephyr repos / files
+zephyr
+doc
+modules
+tools
+bootloader
+.west
+
+app/build
