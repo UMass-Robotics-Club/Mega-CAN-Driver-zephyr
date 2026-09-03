@@ -24,8 +24,8 @@ from pyocd.core.helpers import ConnectHelper
 from pyocd.flash.file_programmer import FileProgrammer
 
 TARGET = "pic32cz8110ca80208"
-PACK = "/Users/asritha/Downloads/Microchip.PIC32CZ-CA80_DFP.1.7.219.pack"
-DEFAULT_HEX = "/Users/asritha/mega-can-fw/build/zephyr/zephyr.hex"
+PACK = "Microchip.PIC32CZ-CA80_DFP.1.7.219.pack"
+DEFAULT_HEX = "build/zephyr/zephyr.hex"
 
 
 def main():

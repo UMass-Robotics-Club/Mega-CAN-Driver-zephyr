@@ -1,13 +1,12 @@
 # mega-can-fw — Zephyr workspace for the PIC32CZ CA80 custom board
 
 Custom Zephyr board **`mega_can`** (based on Microchip's `pic32cz_ca80_cult`)
-that blinks an LED on **PB31** and exposes a UART console on **SERCOM0**.
+that sets up CAN 0 and 5 and a UART console on **SERCOM0** to allow for bridged testing.
 
 ## Layout
 
 ```
 mega-can-fw/
-├── .venv/                         Python venv (west + build deps)
 ├── zephyr/  modules/  ...         Zephyr + HAL (west workspace)
 ├── boards/microchip/mega_can/     the custom board definition
 ├── app/                           the blinky application
