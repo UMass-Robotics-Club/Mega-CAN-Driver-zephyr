@@ -1,0 +1,39 @@
+/*
+ * Copyright (c) 2026
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <dt-bindings/pic32c/pic32cz_ca/pic32cz_ca80/pic32cz8110ca80208-pinctrl.h>
+
+&pinctrl {
+	/*
+	 * UART on SERCOM0:
+	 *   PC0 = SERCOM0 PAD0 -> board TX (txpo=0, TXD is fixed to PAD0)
+	 *   PC3 = SERCOM0 PAD3 -> board RX (rxpo=3)
+	 */
+	sercom0_uart_default: sercom0_uart_default {
+		group1 {
+			pinmux = <PC0D_SERCOM0_PAD0>,
+				 <PC3D_SERCOM0_PAD3>;
+		};
+	};
+
+	/*
+	 * CAN0: TX = PC5, RX = PC4 (function H); transceiver STB on PF2 (GPIO).
+	 * CAN5: TX = PA21, RX = PD23 (function H); transceiver STB on PF7 (GPIO).
+	 */
+	can0_default: can0_default {
+		group1 {
+			pinmux = <PC5H_CAN0_TX>,
+				 <PC4H_CAN0_RX>;
+		};
+	};
+
+	can5_default: can5_default {
+		group1 {
+			pinmux = <PA21H_CAN5_TX>,
+				 <PD23H_CAN5_RX>;
+		};
+	};
+};

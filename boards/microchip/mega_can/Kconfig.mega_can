@@ -1,0 +1,5 @@
+# Copyright (c) 2026
+# SPDX-License-Identifier: Apache-2.0
+
+config BOARD_MEGA_CAN
+	select SOC_PIC32CZ8110CA80208

@@ -1,0 +1,271 @@
+/*
+ * Copyright (c) 2026
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Custom board "mega_can", based on the Microchip PIC32CZ CA80 Curiosity
+ * Ultra (pic32cz_ca80_cult) board definition. Same SoC
+ * (pic32cz8110ca80208), but:
+ *   - a single user LED wired to PB31 (active-high)
+ *   - console/shell UART on SERCOM0 (TX=PC0/PAD0, RX=PC3/PAD3)
+ */
+
+/dts-v1/;
+#include <microchip/pic32c/pic32cz_ca/pic32cz_ca80/pic32cz8110ca80208.dtsi>
+#include "mega_can-pinctrl.dtsi"
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+
+/ {
+	model = "MEGA-CAN (PIC32CZ CA80 custom)";
+	compatible = "microchip,pic32cz8110ca80208", "microchip,pic32cz";
+
+	chosen {
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+		zephyr,console = &sercom0;
+		zephyr,shell-uart = &sercom0;
+	};
+
+	aliases {
+		led0 = &led0;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		led0: led_0 {
+			gpios = <&portb 31 GPIO_ACTIVE_HIGH>;
+			label = "User LED (PB31)";
+		};
+	};
+
+	/* TCAN1044AV transceivers: STB is active high (high = standby, low =
+	 * normal). The CAN core drives STB low on can_start() via the phy.
+	 *
+	 * NOTE: the built PCB routes STB differently from the R4 schematic
+	 * (PCB-only change). Actual ball map: CAN0=V14/PB11, CAN1=V13/PB10,
+	 * CAN2=V7/PB6, CAN3=V6/PB21, CAN4=T1/PA28, CAN5=M1/PA24. */
+	can_phy0: can-phy0 {
+		compatible = "can-transceiver-gpio";
+		standby-gpios = <&portb 11 GPIO_ACTIVE_HIGH>;
+		max-bitrate = <8000000>;
+		#phy-cells = <0>;
+	};
+
+	can_phy5: can-phy5 {
+		compatible = "can-transceiver-gpio";
+		standby-gpios = <&porta 24 GPIO_ACTIVE_HIGH>;
+		max-bitrate = <8000000>;
+		#phy-cells = <0>;
+	};
+};
+
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		storage_partition: partition@7fc000 {
+			label = "storage";
+			reg = <0x0007fc000 0x4000>;
+		};
+	};
+};
+
+&cpu0 {
+	/* External 24 MHz oscillator -> DPLL0 -> 240 MHz system clock. */
+	clock-frequency = <240000000>;
+};
+
+&clock {
+	compatible = "microchip,pic32cz-ca-clock";
+
+	/*
+	 * External 24 MHz oscillator. It is an *active* oscillator (drives a
+	 * clean clock into XIN), so use external-clock mode: xtal-en = 0.
+	 */
+	xosc: xosc {
+		compatible = "microchip,pic32cz-ca-xosc";
+		xosc-frequency = <24000000>;
+		xosc-en = <1>;
+		xosc-xtal-en = <0>;
+	};
+
+	/*
+	 * DPLL0: 24 MHz / REFDIV(4) = 6 MHz FPFD; x FBDIV(160) = 960 MHz VCO;
+	 * / OUTDIV(4) = 240 MHz clkout0. (FPFD 4-48 MHz, VCO 800-1600 MHz.)
+	 */
+	dpll: dpll {
+		compatible = "microchip,pic32cz-ca-dpll";
+
+		dpll0: dpll0 {
+			subsystem = <CLOCK_MCHP_DPLL_ID_DPLL0>;
+			dpll-bandwidth-sel = "4mhz-10mhz";
+			dpll-ref-division-factor = <4>;
+			dpll-feedback-divider-factor = <160>;
+			dpll-src = "xosc";
+			dpll-en = <1>;
+
+			dpll0out0: dpll0out0 {
+				subsystem = <CLOCK_MCHP_DPLL0_ID_OUT0>;
+				dpll-output-division-factor = <4>;
+				dpll-output-en = <1>;
+			};
+		};
+	};
+
+	gclkgen: gclkgen {
+		compatible = "microchip,pic32cz-ca-gclkgen";
+
+		gclkgen0 {
+			subsystem = <CLOCK_MCHP_GCLKGEN_ID_GEN0>;
+			gclkgen-div-factor = <1>;
+			gclkgen-src = "pll0-clkout0";
+			gclkgen-en = <1>;
+		};
+
+		/* SERCOM (UART) clock = DPLL clkout0 / 5 = 48 MHz (already-running
+		 * DPLL, ready at SERCOM init; 240 MHz direct over-clocks SERCOM). */
+		gclkgen1 {
+			subsystem = <CLOCK_MCHP_GCLKGEN_ID_GEN1>;
+			gclkgen-div-factor = <5>;
+			gclkgen-src = "pll0-clkout0";
+			gclkgen-en = <1>;
+		};
+
+		/* CAN core clock = DPLL clkout0 / 3 = 80 MHz. Divides exactly
+		 * into 1 Mbit/s nominal (80 tq) and 8 Mbit/s data (10 tq) bit
+		 * times with prescaler 1, which also keeps the M_CAN
+		 * transmitter delay compensation usable (TDC needs DBRP <= 1). */
+		gclkgen2 {
+			subsystem = <CLOCK_MCHP_GCLKGEN_ID_GEN2>;
+			gclkgen-div-factor = <3>;
+			gclkgen-src = "pll0-clkout0";
+			gclkgen-en = <1>;
+		};
+	};
+
+	gclkperiph: gclkperiph {
+		compatible = "microchip,pic32cz-ca-gclkperiph";
+		#clock-cells = <1>;
+
+		sercom0 {
+			subsystem = <CLOCK_MCHP_GCLKPERIPH_ID_SERCOM0_CORE>;
+			gclkperiph-src = "gclk1";
+			gclkperiph-en = <1>;
+		};
+
+		can0 {
+			subsystem = <CLOCK_MCHP_GCLKPERIPH_ID_CAN0>;
+			gclkperiph-src = "gclk2";
+			gclkperiph-en = <1>;
+		};
+
+		can5 {
+			subsystem = <CLOCK_MCHP_GCLKPERIPH_ID_CAN5>;
+			gclkperiph-src = "gclk2";
+			gclkperiph-en = <1>;
+		};
+	};
+
+	mclkdomain: mclkdomain {
+		compatible = "microchip,pic32cz-ca-mclkdomain";
+
+		mclkcpu {
+			subsystem = <CLOCK_MCHP_MCLKDOMAIN_ID_CPU>;
+			mclk-div = <1>;
+		};
+
+		mclkperiph {
+			subsystem = <CLOCK_MCHP_MCLKDOMAIN_ID_PERIPH>;
+			mclk-div = <1>;
+		};
+	};
+
+	mclkperiph: mclkperiph {
+		compatible = "microchip,pic32cz-ca-mclkperiph";
+		#clock-cells = <1>;
+
+		sercom0 {
+			subsystem = <CLOCK_MCHP_MCLKPERIPH_ID_SERCOM0>;
+			mclk-en = <1>;
+		};
+
+		can0 {
+			subsystem = <CLOCK_MCHP_MCLKPERIPH_ID_CAN0>;
+			mclk-en = <1>;
+		};
+
+		can5 {
+			subsystem = <CLOCK_MCHP_MCLKPERIPH_ID_CAN5>;
+			mclk-en = <1>;
+		};
+	};
+};
+
+&porta {
+	status = "okay";
+};
+
+&portb {
+	status = "okay";
+};
+
+&portc {
+	status = "okay";
+};
+
+/* The M_CAN DMA cannot reach the DTCM at 0x20000000..0x2001ffff, and its
+ * element addressing covers one 64 KiB window selected by MRCFG. Reserve the
+ * top 8 KiB of FLEXRAM for the two message RAMs (see &sram0 below).
+ */
+&sram0 {
+	reg = <0x20000000 DT_SIZE_K(1016)>;
+};
+
+/* Bridged externally to can5 (CAN0_P/N <-> CAN5_P/N) for loopback testing. */
+&can0 {
+	status = "okay";
+	reg = <0x45060000 0x100>, <0x200fe000 0x1000>;
+	reg-names = "m_can", "message_ram";
+	pinctrl-0 = <&can0_default>;
+	pinctrl-names = "default";
+	phys = <&can_phy0>;
+	bitrate = <1000000>;
+	sample-point = <800>;
+	bitrate-data = <8000000>;
+	sample-point-data = <800>;
+};
+
+&can5 {
+	status = "okay";
+	reg = <0x46860000 0x100>, <0x200ff000 0x1000>;
+	reg-names = "m_can", "message_ram";
+	pinctrl-0 = <&can5_default>;
+	pinctrl-names = "default";
+	phys = <&can_phy5>;
+	bitrate = <1000000>;
+	sample-point = <800>;
+	bitrate-data = <8000000>;
+	sample-point-data = <800>;
+};
+
+&sercom0 {
+	compatible = "microchip,sercom-g1-uart";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	current-speed = <115200>;
+	data-bits = <8>;
+	parity = "none";
+	stop-bits = "1";
+	rxpo = <3>;
+	txpo = <0>;
+	pinctrl-0 = <&sercom0_uart_default>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+&dmac {
+	status = "okay";
+};

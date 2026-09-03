@@ -1,0 +1,9 @@
+# Copyright (c) 2026
+# SPDX-License-Identifier: Apache-2.0
+
+board:
+  name: mega_can
+  full_name: MEGA-CAN (PIC32CZ CA80 custom)
+  vendor: microchip
+  socs:
+    - name: pic32cz8110ca80208
