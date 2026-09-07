@@ -60,6 +60,7 @@
 	};
 };
 
+
 &flash0 {
 	partitions {
 		compatible = "fixed-partitions";
@@ -72,6 +73,7 @@
 		};
 	};
 };
+
 
 &cpu0 {
 	/* External 24 MHz oscillator -> DPLL0 -> 240 MHz system clock. */
