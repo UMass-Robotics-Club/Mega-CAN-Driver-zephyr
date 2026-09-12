@@ -36,4 +36,49 @@
 				 <PD23H_CAN5_RX>;
 		};
 	};
+
+	/*
+	 * GMAC (Ethernet), full GMII bus + MDIO. Pins from schematic connection
+	 * notes, cross-checked 2026-09-07 against this header + the other
+	 * pinctrl groups above:
+	 *   - PA21 (ETH_TXCK candidate) is NOT used here - it's already CAN5_TX
+	 *     above. Using PD5 instead (also offered by silicon for this clock).
+	 *   - PD5K = plain clock, matches driver's current MII-only mode.
+	 *     PD5L_ETH_GTXCK is the GMII/gigabit alt function on the SAME pin -
+	 *     switch K->L here when gigabit support lands, no rewiring needed.
+	 *   - ETH_TSUCOMP (PA22, in the raw connection notes as "ETH_INT_N") is
+	 *     NOT included - that's the MAC's internal PTP comparator, not the
+	 *     KSZ9031's own interrupt pin. Left out until the real PHY IRQ pin
+	 *     (if wired at all) is confirmed on the schematic.
+	 */
+	gmac_default: gmac_default {
+		group1 {
+			pinmux = <PA0K_ETH_GTX1>,
+				 <PA1K_ETH_GTX0>,
+				 <PA2K_ETH_GTXEN>,
+				 <PA3K_ETH_GMDC>,
+				 <PA4K_ETH_GMDIO>,
+				 <PA5K_ETH_GRXDV>,
+				 <PA6K_ETH_GRXER>,
+				 <PD2K_ETH_GTXER>,
+				 <PD3K_ETH_GTX3>,
+				 <PD4K_ETH_GTX2>,
+				 <PD5K_ETH_TXCK>,
+				 <PD6K_ETH_GRX3>,
+				 <PD7K_ETH_GRX2>,
+				 <PD8K_ETH_GCOL>,
+				 <PD9K_ETH_GCRS>,
+				 <PD10K_ETH_GRX1>,
+				 <PD11K_ETH_GRX0>,
+				 <PD12K_ETH_GREFCK>,
+				 <PD14K_ETH_GTX7>,
+				 <PD15K_ETH_GTX6>,
+				 <PD16K_ETH_GTX5>,
+				 <PD17K_ETH_GTX4>,
+				 <PD18K_ETH_GRX7>,
+				 <PD19K_ETH_GRX6>,
+				 <PD20K_ETH_GRX4>,
+				 <PD21K_ETH_GRX5>;
+		};
+	};
 };
