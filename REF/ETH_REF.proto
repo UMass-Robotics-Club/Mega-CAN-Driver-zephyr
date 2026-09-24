@@ -1,0 +1,34 @@
+// enum signals{
+// GMAC_TXCK 
+// }
+//
+//
+// 
+//
+
+
+
+
+message gige_frame {
+
+    uint32 arbitration;
+    bool remote;
+    bool ext;
+    uint32 dlc;
+    bytes data;
+
+}
+
+message tx_packet{ // Sending From Board 
+
+    oneof packet{
+        gige_frame frame;
+    }
+}
+
+message rx_packet{ // Recieving From Jetson
+
+    oneof packet{
+        gige_frame frame;
+    }
+}

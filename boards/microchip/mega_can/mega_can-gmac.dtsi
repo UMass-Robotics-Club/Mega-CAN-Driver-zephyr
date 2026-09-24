@@ -1,0 +1,59 @@
+/*
+ * GMAC Ethernet node for mega_can. NOT included from mega_can.dts yet —
+ * pinctrl (GMII data pins + MDIO/MDC) and the PHY node both need the
+ * schematic to fill in real pin/address values first. Everything below is
+ * verified against the ca80 chip header and the upstream driver source
+ * (base address, IRQ, clock IDs, and what the driver actually wires up);
+ * see "Day 2 Working" in the Obsidian vault for how each value was checked.
+ *
+ * CORRECTED 2026-09-07 after an actual build caught it: originally this node
+ * sat at plain root ("/"), on the theory that interrupt-parent was set at
+ * the true tree root so nesting wouldn't matter. Wrong — a real `west build`
+ * failed with "no interrupt parent found", and checking armv7-m.dtsi showed
+ * interrupt-parent = <&nvic> is set ON THE "soc {}" NODE ITSELF, not root.
+ * Fix: re-open "soc { }" by NAME (no label needed — devicetree merges nodes
+ * by matching path/name, same mechanism labels are a shortcut for) so this
+ * node becomes a real child of the existing soc node and inherits its
+ * interrupt-parent normally. Confirmed by a clean devicetree pass afterward.
+ */
+
+
+/*
+ * Raw schematic/datasheet connection notes (ball locations, all alternate-
+ * function candidates per pin) live in the Obsidian vault, not here anymore.
+ * The resolved pinctrl group built from them is in mega_can-pinctrl.dtsi
+ * (gmac_default) - see the comment there for the PA21 conflict and the
+ * ETH_TSUCOMP/ETH_INT_N question found while resolving this table.
+ */
+/ {
+	soc {
+		gmac: ethernet@45070000 {
+			compatible = "microchip,gmac-g1-eth";
+			reg = <0x45070000 0x400>;
+			interrupts = <202 0>;
+			interrupt-names = "gmac";
+			num-queues = <1>;
+			clocks = <&mclkperiph CLOCK_MCHP_MCLKPERIPH_ID_GMAC_AHB>,
+				 <&mclkperiph CLOCK_MCHP_MCLKPERIPH_ID_GMAC_APB>;
+			clock-names = "mclk-ahb", "mclk-apb";
+			phy-connection-type = "mii"; /* NOT the binding default
+						       * "rmii" - KSZ9031M is
+						       * GMII/MII, no RMII. */
+			pinctrl-0 = <&gmac_default>;
+			pinctrl-names = "default";
+			status = "disabled";
+
+			mdio: mdio {
+				compatible = "microchip,gmac-g1-mdio";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "disabled";
+
+				/* TODO: phy0 node goes here once the schematic
+				 * gives us the KSZ9031's MDIO address and
+				 * reset/interrupt GPIOs. phy-handle on &gmac
+				 * above points at it. */
+			};
+		};
+	};
+};
