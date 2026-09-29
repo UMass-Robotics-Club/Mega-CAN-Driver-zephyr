@@ -1,11 +1,18 @@
 .venv
 
-# Exclude zephyr repos / files
-zephyr
-doc
-modules
-tools
-bootloader
-.west
+# West workspace (each laptop runs west init/update itself). The leading "/"
+# anchors these to the repo root, so module/zephyr/module.yml is NOT ignored.
+/zephyr
+/doc
+/modules
+/tools
+/bootloader
+/.west
 
-app/build
+# Build output (any app's build/ folder) and Python caches
+build
+__pycache__
+
+# PC test binaries (make -C app/tests)
+app/tests/test_robstride
+app/tests/test_proto

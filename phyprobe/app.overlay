@@ -1,0 +1,55 @@
+/*
+ * KSZ9031 PHY probe. Pins from GIGE.pdf (MCU sheet p.3, Ethernet sheet p.7).
+ *
+ * MDC/MDIO are driven as plain GPIOs (bit-banged) instead of through the
+ * GMAC's own MDIO block. That keeps the MAC, its clocks and the unfinished
+ * driver port out of the test: if the PHY answers here, the PHY, its power,
+ * its 25 MHz oscillator and the MDIO wiring are good.
+ *
+ *   MDC   PA3   (would be PA3K_ETH_GMDC)
+ *   MDIO  PA4   (would be PA4K_ETH_GMDIO), 4.7k pull-up R58 on the board
+ *   RESET PE7   ball J2 -> R60 270R -> PHY RESET_N (10k pull-up R56 + 100nF C106)
+ *   SEL   PA22  ball G4 -> U4 SEL (ETH_TX_CLK_EN), TX clock switch
+ *   INT   PA23  ball G1 <- PHY INT_N (4.7k pull-up R62)
+ *
+ * PHY strap pins with NO pull resistor on the board (p.7). The KSZ9031 has no
+ * internal pulls on them either, so the MCU sets them with its own weak pulls
+ * while RESET_N is low (see phy_hw_reset() in main.c):
+ *   MODE0     = RXD0   PD11 (B2)  -> 1 \
+ *   MODE1     = RXD1   PD10 (A2)  -> 0  | MODE[3:0] = 0001 = GMII/MII
+ *   MODE2     = RXD2   PD7  (F7)  -> 0  |
+ *   MODE3     = RXD3   PD6  (A4)  -> 0 /
+ *   CLK125_EN = RX_DV  PA5  (E2)  -> 0   125 MHz output off (only goes to TP1)
+ *   PHYAD2    = RX_CLK PD12 (B1)  -> 0   (via R52 0R)
+ * PHYAD1/0 = LED2/LED1 are pulled up only through the RJ45 LEDs + 330R
+ * (no 10k like the datasheet's Fig 9-1), so they probably read 1, 1:
+ * expected PHY address 0b011 = 3.
+ */
+
+/ {
+	mdio_bb: mdio {
+		compatible = "zephyr,mdio-gpio";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		mdc-gpios = <&porta 3 GPIO_ACTIVE_HIGH>;
+		mdio-gpios = <&porta 4 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+	};
+
+	zephyr,user {
+		eth-reset-gpios = <&porte 7 GPIO_ACTIVE_LOW>;
+		eth-txclk-sel-gpios = <&porta 22 GPIO_ACTIVE_HIGH>;
+		eth-int-gpios = <&porta 23 GPIO_ACTIVE_LOW>;
+		/* MODE0, MODE1, MODE2, MODE3, CLK125_EN, PHYAD2 (order used in main.c) */
+		eth-strap-gpios = <&portd 11 0>, <&portd 10 0>, <&portd 7 0>,
+				  <&portd 6 0>, <&porta 5 0>, <&portd 12 0>;
+	};
+};
+
+&portd {
+	status = "okay";
+};
+
+&porte {
+	status = "okay";
+};

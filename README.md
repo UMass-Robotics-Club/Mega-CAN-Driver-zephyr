@@ -9,9 +9,16 @@ that sets up CAN 0 and 5 and a UART console on **SERCOM0** to allow for bridged 
 mega-can-fw/
 ├── zephyr/  modules/  ...         Zephyr + HAL (west workspace)
 ├── boards/microchip/mega_can/     the custom board definition
-├── app/                           the blinky application
+│   └── mega_can-gmac.dtsi         Ethernet (MAC, PHY, clocks); included by Ethernet apps
+├── module/                        Zephyr module: drivers Zephyr doesn't have yet
+│   └── drivers/ethernet/          PIC32CZ ETH (GMAC) driver, GMII + MII
+├── bringup/                       CAN FD bridge hardware test (can0 <-> can5)
+├── phyprobe/                      Ethernet PHY test: straps, MDIO scan, link speed
+├── ethtest/                       Ethernet test: ping + UDP echo on port 7, net shell
+├── app/                           the real gateway firmware (not started yet)
+├── udp_protocol/                  Jetson <-> board UDP protocol (Python) + fake board
 ├── flash.py                       program the image (then power-cycle to run)
-└── blink.sh                      build + program (then power-cycle to run)
+└── STATUS.md                      where the work stands
 ```
 
 ## Board: `mega_can`
@@ -60,13 +67,23 @@ Now Zephyr should be setup and ready to use!
 
 ## Build & run
 
-Hopefully if everything in the previous section went well, you can now build the example app in [app](app)
+From the repo root, pick an app and give it its own build directory:
 ```
-cd app
-west build -p always -b mega_can .
+west build -p always -b mega_can bringup  -d bringup/build
+west build -p always -b mega_can phyprobe -d phyprobe/build
+west build -p always -b mega_can ethtest  -d ethtest/build
+./flash.py bringup/build/zephyr/zephyr.hex
 ```
 
 Then **power-cycle the board** to run it (see "How this board boots").
+
+Ethernet apps also load this repo's Zephyr module (`module/`) through
+`ZEPHYR_EXTRA_MODULES` in their `CMakeLists.txt`; no west manifest change is
+needed. See `module/README.md`.
+
+If `west` says "command not found" after the repo moved folders, the venv's
+scripts point at the old path: use `python -m west ...` / `.venv/bin/python
+flash.py ...`, or recreate the venv.
 
 
 ## How this board boots — IMPORTANT

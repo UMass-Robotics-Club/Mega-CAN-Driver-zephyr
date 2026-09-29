@@ -52,6 +52,30 @@
 		#phy-cells = <0>;
 	};
 
+	can_phy1: can-phy1 {
+		compatible = "can-transceiver-gpio";
+		standby-gpios = <&portb 10 GPIO_ACTIVE_HIGH>;
+		max-bitrate = <8000000>;
+		#phy-cells = <0>;
+	};
+	can_phy2: can-phy2 {
+		compatible = "can-transceiver-gpio";
+		standby-gpios = <&portb 6 GPIO_ACTIVE_HIGH>;
+		max-bitrate = <8000000>;
+		#phy-cells = <0>;
+	};
+	can_phy3: can-phy3 {
+		compatible = "can-transceiver-gpio";
+		standby-gpios = <&portb 21 GPIO_ACTIVE_HIGH>;
+		max-bitrate = <8000000>;
+		#phy-cells = <0>;
+	};
+	can_phy4: can-phy4 {
+		compatible = "can-transceiver-gpio";
+		standby-gpios = <&porta 28 GPIO_ACTIVE_HIGH>;
+		max-bitrate = <8000000>;
+		#phy-cells = <0>;
+	};
 	can_phy5: can-phy5 {
 		compatible = "can-transceiver-gpio";
 		standby-gpios = <&porta 24 GPIO_ACTIVE_HIGH>;
@@ -164,6 +188,30 @@
 			gclkperiph-en = <1>;
 		};
 
+		can1 {
+			subsystem = <CLOCK_MCHP_GCLKPERIPH_ID_CAN1>;
+			gclkperiph-src = "gclk2";
+			gclkperiph-en = <1>;
+		};
+
+		can2 {
+			subsystem = <CLOCK_MCHP_GCLKPERIPH_ID_CAN2>;
+			gclkperiph-src = "gclk2";
+			gclkperiph-en = <1>;
+		};
+
+		can3 {
+			subsystem = <CLOCK_MCHP_GCLKPERIPH_ID_CAN3>;
+			gclkperiph-src = "gclk2";
+			gclkperiph-en = <1>;
+		};
+
+		can4 {
+			subsystem = <CLOCK_MCHP_GCLKPERIPH_ID_CAN4>;
+			gclkperiph-src = "gclk2";
+			gclkperiph-en = <1>;
+		};
+
 		can5 {
 			subsystem = <CLOCK_MCHP_GCLKPERIPH_ID_CAN5>;
 			gclkperiph-src = "gclk2";
@@ -199,6 +247,26 @@
 			mclk-en = <1>;
 		};
 
+		can1 {
+			subsystem = <CLOCK_MCHP_MCLKPERIPH_ID_CAN1>;
+			mclk-en = <1>;
+		};
+
+		can2 {
+			subsystem = <CLOCK_MCHP_MCLKPERIPH_ID_CAN2>;
+			mclk-en = <1>;
+		};
+
+		can3 {
+			subsystem = <CLOCK_MCHP_MCLKPERIPH_ID_CAN3>;
+			mclk-en = <1>;
+		};
+
+		can4 {
+			subsystem = <CLOCK_MCHP_MCLKPERIPH_ID_CAN4>;
+			mclk-en = <1>;
+		};
+
 		can5 {
 			subsystem = <CLOCK_MCHP_MCLKPERIPH_ID_CAN5>;
 			mclk-en = <1>;
@@ -220,10 +288,21 @@
 
 /* The M_CAN DMA cannot reach the DTCM at 0x20000000..0x2001ffff, and its
  * element addressing covers one 64 KiB window selected by MRCFG. Reserve the
- * top 8 KiB of FLEXRAM for the two message RAMs (see &sram0 below).
+ * top 24 KiB of FLEXRAM for the six message RAMs, one 4 KiB-aligned block
+ * each (see &sram0 below):
+ *   0x200fa000 can4   0x200fb000 can1   0x200fc000 can2
+ *   0x200fd000 can3   0x200fe000 can0   0x200ff000 can5
+ * (can0/can5 kept where the bring-up test had them.)
+ *
+ * sram0 also starts ABOVE the DTCM (0x20020000, as in the SoC dtsi), so that
+ * everything the linker places - Ethernet descriptors and packet buffers
+ * included - is reachable by bus-master DMA. The 1 MB SRAM starts at
+ * 0x20000000 and its first 128 KiB is the DTCM (DS60001749L Table 11-1,
+ * 14.5.1). 0x20020000 + 872 KiB = 0x200fa000, the first CAN message RAM.
+ * Changed 2026-09-28; before, sram0 was 0x20000000, 1016 KiB.
  */
 &sram0 {
-	reg = <0x20000000 DT_SIZE_K(1016)>;
+	reg = <0x20020000 DT_SIZE_K(872)>;
 };
 
 /* Bridged externally to can5 (CAN0_P/N <-> CAN5_P/N) for loopback testing. */
@@ -238,6 +317,54 @@
 	sample-point = <800>;
 	bitrate-data = <8000000>;
 	sample-point-data = <800>;
+};
+
+/*
+ * Motor buses (Robstride 02: classic CAN 2.0B, 1 Mbit/s, never FD frames).
+ * Disabled here; the motor apps enable the ones they use. can4 is a spare.
+ */
+&can1 {
+	status = "disabled";
+	reg = <0x46060000 0x100>, <0x200fb000 0x1000>;
+	reg-names = "m_can", "message_ram";
+	pinctrl-0 = <&can1_default>;
+	pinctrl-names = "default";
+	phys = <&can_phy1>;
+	bitrate = <1000000>;
+	sample-point = <800>;
+};
+
+&can2 {
+	status = "disabled";
+	reg = <0x46062000 0x100>, <0x200fc000 0x1000>;
+	reg-names = "m_can", "message_ram";
+	pinctrl-0 = <&can2_default>;
+	pinctrl-names = "default";
+	phys = <&can_phy2>;
+	bitrate = <1000000>;
+	sample-point = <800>;
+};
+
+&can3 {
+	status = "disabled";
+	reg = <0x45860000 0x100>, <0x200fd000 0x1000>;
+	reg-names = "m_can", "message_ram";
+	pinctrl-0 = <&can3_default>;
+	pinctrl-names = "default";
+	phys = <&can_phy3>;
+	bitrate = <1000000>;
+	sample-point = <800>;
+};
+
+&can4 {
+	status = "disabled";
+	reg = <0x45062000 0x100>, <0x200fa000 0x1000>;
+	reg-names = "m_can", "message_ram";
+	pinctrl-0 = <&can4_default>;
+	pinctrl-names = "default";
+	phys = <&can_phy4>;
+	bitrate = <1000000>;
+	sample-point = <800>;
 };
 
 &can5 {

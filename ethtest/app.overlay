@@ -1,0 +1,23 @@
+/* Ethernet on: MAC, bit-banged MDIO, KSZ9031 PHY (see the included file). */
+#include "../boards/microchip/mega_can/mega_can-gmac.dtsi"
+
+&gmac {
+	status = "okay";
+};
+
+&eth_mdio {
+	status = "okay";
+};
+
+&eth_phy {
+	status = "okay";
+};
+
+/* straps, RX pins (port D) and PHY reset PE7 (port E) */
+&portd {
+	status = "okay";
+};
+
+&porte {
+	status = "okay";
+};

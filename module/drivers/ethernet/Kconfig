@@ -1,0 +1,47 @@
+# Copyright (c) 2026 Microchip Technology Inc.
+# Copyright (c) 2026 UMass Robotics Club
+# SPDX-License-Identifier: Apache-2.0
+
+# Port of drivers/ethernet/Kconfig.mchp (ETH_MCHP_GMAC_G1) to the PIC32CZ CA
+# "ETH" block. The RX/thread options keep the upstream names on purpose so the
+# driver source stays diffable against eth_mchp_gmac_g1.c.
+
+menuconfig ETH_MCHP_PIC32CZ
+	bool "Microchip PIC32CZ CA ETH (GMAC) driver"
+	default y
+	depends on ETH_DRIVER
+	depends on NET_BUF_FIXED_DATA_SIZE
+	depends on DT_HAS_MICROCHIP_PIC32CZ_ETH_ENABLED
+	select PINCTRL
+	select GPIO
+	select NET_CHECKSUM_OFFLOAD_SUPPORTED if NET_L2_ETHERNET
+	help
+	  Ethernet driver for the PIC32CZ CA8x/CA9x ETH peripheral (Cadence GEM
+	  core behind a small wrapper), with GMII (1000 Mbit/s) and MII
+	  (10/100) support.
+
+if ETH_MCHP_PIC32CZ
+
+config ETH_MCHP_BUF_RX_COUNT
+	int "Network RX buffers preallocated by the ETH driver"
+	default 12
+	help
+	  Number of network buffers permanently owned by the driver for the
+	  receive DMA. Must fit at least one full Ethernet frame.
+
+config ETH_MCHP_RX_THREAD_STACK_SIZE
+	int "RX thread stack size"
+	default 1600
+
+config ETH_MCHP_RX_THREAD_PRIORITY
+	int "RX thread priority"
+	default 2
+
+config ETH_MCHP_PIC32CZ_PHY_STRAP_INIT_PRIORITY
+	int "PHY strap/reset init priority"
+	default 50
+	help
+	  POST_KERNEL priority of the hook that resets the PHY with its strap
+	  pins set. Must run after GPIO and before MDIO/PHY/ETH (default 60).
+
+endif # ETH_MCHP_PIC32CZ
