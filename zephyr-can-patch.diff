@@ -1,0 +1,516 @@
+diff --git a/drivers/can/CMakeLists.txt b/drivers/can/CMakeLists.txt
+index e32ad6a2eb1..b3774584fb2 100644
+--- a/drivers/can/CMakeLists.txt
++++ b/drivers/can/CMakeLists.txt
+@@ -19,7 +19,6 @@ zephyr_library_sources_ifdef(CONFIG_USERSPACE can_handlers.c)
+ 
+ # CAN subsystem driver files
+ # zephyr-keep-sorted-start
+-zephyr_library_sources_ifdef(CONFIG_CAN_BFLB_BL61X can_bflb_bl61x.c)
+ zephyr_library_sources_ifdef(CONFIG_CAN_ESP32_TWAI can_esp32_twai.c)
+ zephyr_library_sources_ifdef(CONFIG_CAN_ESP32_TWAIFD can_esp32_twaifd.c)
+ zephyr_library_sources_ifdef(CONFIG_CAN_FAKE can_fake.c)
+@@ -37,9 +36,9 @@ zephyr_library_sources_ifdef(CONFIG_CAN_NUMAKER can_numaker.c)
+ zephyr_library_sources_ifdef(CONFIG_CAN_NXP_LPC_MCAN can_nxp_lpc_mcan.c)
+ zephyr_library_sources_ifdef(CONFIG_CAN_NXP_S32_CANXL can_nxp_s32_canxl.c)
+ zephyr_library_sources_ifdef(CONFIG_CAN_RCAR can_rcar.c)
+-zephyr_library_sources_ifdef(CONFIG_CAN_REALTEK_BEE can_realtek_bee.c)
+ zephyr_library_sources_ifdef(CONFIG_CAN_RENESAS_RA_CANFD can_renesas_ra.c)
+ zephyr_library_sources_ifdef(CONFIG_CAN_RENESAS_RZ_CANFD can_renesas_rz_canfd.c)
++zephyr_library_sources_ifdef(CONFIG_CAN_MCHP_PIC32CZ can_mchp_pic32cz.c)
+ zephyr_library_sources_ifdef(CONFIG_CAN_SAM can_sam.c)
+ zephyr_library_sources_ifdef(CONFIG_CAN_SAM0 can_sam0.c)
+ zephyr_library_sources_ifdef(CONFIG_CAN_SJA1000 can_sja1000.c)
+diff --git a/drivers/can/Kconfig b/drivers/can/Kconfig
+index ea41215ee4e..412b3135e54 100644
+--- a/drivers/can/Kconfig
++++ b/drivers/can/Kconfig
+@@ -121,7 +121,6 @@ config CAN_QEMU_IFACE_NAME
+ source "drivers/can/transceiver/Kconfig"
+ 
+ # zephyr-keep-sorted-start
+-source "drivers/can/Kconfig.bflb"
+ source "drivers/can/Kconfig.esp32"
+ source "drivers/can/Kconfig.fake"
+ source "drivers/can/Kconfig.infineon"
+@@ -133,13 +132,13 @@ source "drivers/can/Kconfig.mcp2515"
+ source "drivers/can/Kconfig.mcp251xfd"
+ source "drivers/can/Kconfig.mcux"
+ source "drivers/can/Kconfig.mspm0"
++source "drivers/can/Kconfig.mchp_pic32cz"
+ source "drivers/can/Kconfig.native_linux"
+ source "drivers/can/Kconfig.nrf"
+ source "drivers/can/Kconfig.numaker"
+ source "drivers/can/Kconfig.nxp_lpc_mcan"
+ source "drivers/can/Kconfig.nxp_s32"
+ source "drivers/can/Kconfig.rcar"
+-source "drivers/can/Kconfig.realtek_bee"
+ source "drivers/can/Kconfig.renesas_ra"
+ source "drivers/can/Kconfig.renesas_rz"
+ source "drivers/can/Kconfig.sam"
+diff --git a/drivers/can/Kconfig.mchp_pic32cz b/drivers/can/Kconfig.mchp_pic32cz
+new file mode 100644
+index 00000000000..3aae235450e
+--- /dev/null
++++ b/drivers/can/Kconfig.mchp_pic32cz
+@@ -0,0 +1,13 @@
++# Copyright (c) 2026
++# SPDX-License-Identifier: Apache-2.0
++
++config CAN_MCHP_PIC32CZ
++	bool "Microchip PIC32CZ CAN FD driver"
++	default y
++	depends on DT_HAS_MICROCHIP_PIC32CZ_CAN_ENABLED
++	depends on SOC_FAMILY_MICROCHIP_PIC32CZ_CA
++	select CAN_MCAN
++	select PINCTRL
++	help
++	  Enable the CAN FD driver for the Microchip PIC32CZ CA family
++	  (Bosch M_CAN based).
+diff --git a/drivers/can/can_mchp_pic32cz.c b/drivers/can/can_mchp_pic32cz.c
+new file mode 100644
+index 00000000000..9e3bfca9a49
+--- /dev/null
++++ b/drivers/can/can_mchp_pic32cz.c
+@@ -0,0 +1,264 @@
++/*
++ * Copyright (c) 2026
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * CAN FD driver for the Microchip PIC32CZ CA family (Bosch M_CAN wrapper).
++ *
++ * Integration details (PIC32CZ CA80/CA90):
++ * - Each instance has a single NVIC interrupt line, so both M_CAN interrupt
++ *   lines are routed to line 0 (like the SAM0 wrapper).
++ * - The message RAM lives in system SRAM. The M_CAN 16-bit element addresses
++ *   provide address bits [15:0]; bits [23:16] come from the Microchip
++ *   MRCFG.OFFSET wrapper register (bits [31:24] are fixed to the SRAM
++ *   segment). The whole message RAM must therefore fit inside one 64 KiB
++ *   window, guaranteed here by a 4 KiB-aligned buffer of at most 4 KiB.
++ * - The core clock is a GCLK peripheral channel; the bus clock is an MCLK
++ *   enable. Both are managed through the pic32cz-ca clock-control driver.
++ */
++
++#include <zephyr/drivers/can.h>
++#include <zephyr/drivers/clock_control.h>
++#include <zephyr/drivers/pinctrl.h>
++#include <zephyr/irq.h>
++#include <zephyr/kernel.h>
++#include <zephyr/logging/log.h>
++
++#include "can_mcan.h"
++
++LOG_MODULE_REGISTER(can_mchp_pic32cz, CONFIG_CAN_LOG_LEVEL);
++
++#define DT_DRV_COMPAT microchip_pic32cz_can
++
++/* Microchip wrapper register: message RAM base address bits [23:16] */
++#define CAN_MCHP_MRCFG        0x08
++#define CAN_MCHP_MRCFG_OFFSET GENMASK(23, 16)
++
++struct can_mchp_pic32cz_config {
++	mm_reg_t base;
++	mem_addr_t mram;
++	size_t mram_size;
++	void (*config_irq)(void);
++	const struct pinctrl_dev_config *pcfg;
++	const struct device *clock_dev;
++	clock_control_subsys_t gclk_sys;
++	clock_control_subsys_t mclk_sys;
++};
++
++static int can_mchp_pic32cz_read_reg(const struct device *dev, uint16_t reg, uint32_t *val)
++{
++	const struct can_mcan_config *mcan_config = dev->config;
++	const struct can_mchp_pic32cz_config *mchp_config = mcan_config->custom;
++
++	return can_mcan_sys_read_reg(mchp_config->base, reg, val);
++}
++
++static int can_mchp_pic32cz_write_reg(const struct device *dev, uint16_t reg, uint32_t val)
++{
++	const struct can_mcan_config *mcan_config = dev->config;
++	const struct can_mchp_pic32cz_config *mchp_config = mcan_config->custom;
++
++	switch (reg) {
++	case CAN_MCAN_ILS:
++		/* Route all interrupts to M_CAN line 0 (single NVIC line) */
++		val = 0;
++		break;
++	case CAN_MCAN_ILE:
++		val = CAN_MCAN_ILE_EINT0;
++		break;
++	default:
++		break;
++	}
++
++	return can_mcan_sys_write_reg(mchp_config->base, reg, val);
++}
++
++static int can_mchp_pic32cz_read_mram(const struct device *dev, uint16_t offset, void *dst,
++				      size_t len)
++{
++	const struct can_mcan_config *mcan_config = dev->config;
++	const struct can_mchp_pic32cz_config *mchp_config = mcan_config->custom;
++
++	return can_mcan_sys_read_mram(mchp_config->mram, offset, dst, len);
++}
++
++static int can_mchp_pic32cz_write_mram(const struct device *dev, uint16_t offset, const void *src,
++				       size_t len)
++{
++	const struct can_mcan_config *mcan_config = dev->config;
++	const struct can_mchp_pic32cz_config *mchp_config = mcan_config->custom;
++
++	return can_mcan_sys_write_mram(mchp_config->mram, offset, src, len);
++}
++
++static int can_mchp_pic32cz_clear_mram(const struct device *dev, uint16_t offset, size_t len)
++{
++	const struct can_mcan_config *mcan_config = dev->config;
++	const struct can_mchp_pic32cz_config *mchp_config = mcan_config->custom;
++
++	return can_mcan_sys_clear_mram(mchp_config->mram, offset, len);
++}
++
++static void can_mchp_pic32cz_line_x_isr(const struct device *dev)
++{
++	can_mcan_line_0_isr(dev);
++	can_mcan_line_1_isr(dev);
++}
++
++static int can_mchp_pic32cz_get_core_clock(const struct device *dev, uint32_t *rate)
++{
++	const struct can_mcan_config *mcan_config = dev->config;
++	const struct can_mchp_pic32cz_config *mchp_config = mcan_config->custom;
++
++	return clock_control_get_rate(mchp_config->clock_dev, mchp_config->gclk_sys, rate);
++}
++
++static int can_mchp_pic32cz_init(const struct device *dev)
++{
++	const struct can_mcan_config *mcan_config = dev->config;
++	const struct can_mchp_pic32cz_config *mchp_config = mcan_config->custom;
++	uint32_t mrcfg;
++	int ret;
++
++	ret = clock_control_on(mchp_config->clock_dev, mchp_config->mclk_sys);
++	if (ret < 0 && ret != -EALREADY) {
++		LOG_ERR("failed to enable bus clock (%d)", ret);
++		return ret;
++	}
++
++	ret = clock_control_on(mchp_config->clock_dev, mchp_config->gclk_sys);
++	if (ret < 0 && ret != -EALREADY) {
++		LOG_ERR("failed to enable core clock (%d)", ret);
++		return ret;
++	}
++
++	ret = pinctrl_apply_state(mchp_config->pcfg, PINCTRL_STATE_DEFAULT);
++	if (ret < 0) {
++		LOG_ERR("failed to apply pinctrl (%d)", ret);
++		return ret;
++	}
++
++	/* The M_CAN master address is 0x20000000 | OFFSET << 16 | addr[15:0],
++	 * where OFFSET is MRCFG bits [23:16] and addr[15:0] comes from the
++	 * element address registers. Two consequences: the message RAM must
++	 * fit inside a single 64 KiB window, and it must live in DMA-visible
++	 * FLEXRAM (0x20020000+) -- NOT in the CPU-private DTCM that occupies
++	 * the first 128 KiB of the 0x20000000 space.
++	 */
++	uint32_t mrba = mchp_config->mram & 0xFFFF0000U;
++	uint32_t mram_end = mchp_config->mram + mchp_config->mram_size - 1U;
++
++	if (mchp_config->mram < 0x20020000U) {
++		LOG_ERR("message RAM at 0x%08x is in DTCM, not DMA-visible FLEXRAM",
++			(uint32_t)mchp_config->mram);
++		return -EINVAL;
++	}
++
++	if ((mram_end & 0xFFFF0000U) != mrba) {
++		LOG_ERR("message RAM 0x%08x..0x%08x straddles a 64 KiB window",
++			(uint32_t)mchp_config->mram, mram_end);
++		return -EINVAL;
++	}
++
++	ret = can_mcan_configure_mram(dev, mrba, mchp_config->mram);
++	if (ret != 0) {
++		return ret;
++	}
++
++	/* configure_mram left the core in init mode with CCE set, which the
++	 * (enable-protected) MRCFG wrapper register requires.
++	 */
++	mrcfg = mchp_config->mram & CAN_MCHP_MRCFG_OFFSET;
++	sys_write32(mrcfg, mchp_config->base + CAN_MCHP_MRCFG);
++	if (sys_read32(mchp_config->base + CAN_MCHP_MRCFG) != mrcfg) {
++		LOG_ERR("MRCFG readback mismatch (wrote 0x%08x)", mrcfg);
++		return -EIO;
++	}
++
++	ret = can_mcan_init(dev);
++	if (ret != 0) {
++		LOG_ERR("failed to init mcan (%d)", ret);
++		return ret;
++	}
++
++	mchp_config->config_irq();
++
++	return 0;
++}
++
++static DEVICE_API(can, can_mchp_pic32cz_driver_api) = {
++	.get_capabilities = can_mcan_get_capabilities,
++	.start = can_mcan_start,
++	.stop = can_mcan_stop,
++	.set_mode = can_mcan_set_mode,
++	.set_timing = can_mcan_set_timing,
++	.send = can_mcan_send,
++	.add_rx_filter = can_mcan_add_rx_filter,
++	.remove_rx_filter = can_mcan_remove_rx_filter,
++	.get_state = can_mcan_get_state,
++#ifdef CONFIG_CAN_MANUAL_RECOVERY_MODE
++	.recover = can_mcan_recover,
++#endif /* CONFIG_CAN_MANUAL_RECOVERY_MODE */
++	.get_core_clock = can_mchp_pic32cz_get_core_clock,
++	.get_max_filters = can_mcan_get_max_filters,
++	.set_state_change_callback = can_mcan_set_state_change_callback,
++	.timing_min = CAN_MCAN_TIMING_MIN_INITIALIZER,
++	.timing_max = CAN_MCAN_TIMING_MAX_INITIALIZER,
++#ifdef CONFIG_CAN_FD_MODE
++	.set_timing_data = can_mcan_set_timing_data,
++	.timing_data_min = CAN_MCAN_TIMING_DATA_MIN_INITIALIZER,
++	.timing_data_max = CAN_MCAN_TIMING_DATA_MAX_INITIALIZER,
++#endif /* CONFIG_CAN_FD_MODE */
++};
++
++static const struct can_mcan_ops can_mchp_pic32cz_ops = {
++	.read_reg = can_mchp_pic32cz_read_reg,
++	.write_reg = can_mchp_pic32cz_write_reg,
++	.read_mram = can_mchp_pic32cz_read_mram,
++	.write_mram = can_mchp_pic32cz_write_mram,
++	.clear_mram = can_mchp_pic32cz_clear_mram,
++};
++
++#define CAN_MCHP_PIC32CZ_IRQ_CFG_FUNCTION(inst)                                                    \
++	static void config_can_##inst##_irq(void)                                                  \
++	{                                                                                          \
++		IRQ_CONNECT(DT_INST_IRQ_BY_NAME(inst, int0, irq),                                  \
++			    DT_INST_IRQ_BY_NAME(inst, int0, priority),                             \
++			    can_mchp_pic32cz_line_x_isr, DEVICE_DT_INST_GET(inst), 0);             \
++		irq_enable(DT_INST_IRQ_BY_NAME(inst, int0, irq));                                  \
++	}
++
++#define CAN_MCHP_PIC32CZ_CFG_INST(inst)                                                            \
++	CAN_MCAN_DT_INST_CALLBACKS_DEFINE(inst, can_mchp_pic32cz_cbs_##inst);                      \
++                                                                                                   \
++	static const struct can_mchp_pic32cz_config can_mchp_pic32cz_cfg_##inst = {                \
++		.base = CAN_MCAN_DT_INST_MCAN_ADDR(inst),                                          \
++		.mram = (mem_addr_t)CAN_MCAN_DT_INST_MRAM_ADDR(inst),                              \
++		.mram_size = CAN_MCAN_DT_INST_MRAM_SIZE(inst),                                     \
++		.clock_dev = DEVICE_DT_GET(DT_NODELABEL(clock)),                                   \
++		.gclk_sys = (void *)(DT_INST_CLOCKS_CELL_BY_NAME(inst, gclk, subsystem)),          \
++		.mclk_sys = (void *)(DT_INST_CLOCKS_CELL_BY_NAME(inst, mclk, subsystem)),          \
++		.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst),                                      \
++		.config_irq = config_can_##inst##_irq,                                             \
++	};                                                                                         \
++                                                                                                   \
++	static const struct can_mcan_config can_mcan_cfg_##inst = CAN_MCAN_DT_CONFIG_INST_GET(     \
++		inst, &can_mchp_pic32cz_cfg_##inst, &can_mchp_pic32cz_ops,                         \
++		&can_mchp_pic32cz_cbs_##inst);
++
++#define CAN_MCHP_PIC32CZ_DATA_INST(inst) CAN_MCAN_DATA_DEFINE(can_mcan_data_##inst, NULL);
++
++#define CAN_MCHP_PIC32CZ_DEVICE_INST(inst)                                                         \
++	CAN_DEVICE_DT_INST_DEFINE(inst, can_mchp_pic32cz_init, NULL, &can_mcan_data_##inst,        \
++				  &can_mcan_cfg_##inst, POST_KERNEL, CONFIG_CAN_INIT_PRIORITY,     \
++				  &can_mchp_pic32cz_driver_api);
++
++#define CAN_MCHP_PIC32CZ_INST(inst)                                                                \
++	CAN_MCAN_DT_INST_BUILD_ASSERT_MRAM_CFG(inst);                                              \
++	PINCTRL_DT_INST_DEFINE(inst);                                                              \
++	CAN_MCHP_PIC32CZ_IRQ_CFG_FUNCTION(inst)                                                    \
++	CAN_MCHP_PIC32CZ_CFG_INST(inst)                                                            \
++	CAN_MCHP_PIC32CZ_DATA_INST(inst)                                                           \
++	CAN_MCHP_PIC32CZ_DEVICE_INST(inst)
++
++DT_INST_FOREACH_STATUS_OKAY(CAN_MCHP_PIC32CZ_INST)
+diff --git a/drivers/clock_control/clock_control_mchp_pic32cz_ca.c b/drivers/clock_control/clock_control_mchp_pic32cz_ca.c
+index f46de6267da..3a1b2c031dc 100644
+--- a/drivers/clock_control/clock_control_mchp_pic32cz_ca.c
++++ b/drivers/clock_control/clock_control_mchp_pic32cz_ca.c
+@@ -29,7 +29,10 @@ LOG_MODULE_REGISTER(clock_mchp_pic32cz_ca, CONFIG_CLOCK_CONTROL_LOG_LEVEL);
+ 
+ #define GCLK_IO_MIN                2
+ #define GCLK_IO_MAX                7
+-#define GCLK_PH_MAX                47
++/* The GCLK has 64 peripheral channels (GCLK_PCHCTRL[64]); the highest ID used
++ * by the pic32cz-ca dt-bindings is 63 (e.g. the CAN2..CAN5 channels are
++ * 48..51). */
++#define GCLK_PH_MAX                63
+ #define BIT_MASK_MAX               31
+ #define CLOCK_INIT_ITERATION_COUNT 3
+ 
+diff --git a/dts/arm/microchip/pic32c/pic32cz_ca/common/pic32cz_ca.dtsi b/dts/arm/microchip/pic32c/pic32cz_ca/common/pic32cz_ca.dtsi
+index 7fe83cb7b47..ee950f09ecc 100644
+--- a/dts/arm/microchip/pic32c/pic32cz_ca/common/pic32cz_ca.dtsi
++++ b/dts/arm/microchip/pic32c/pic32cz_ca/common/pic32cz_ca.dtsi
+@@ -9,10 +9,6 @@
+ #include <zephyr/dt-bindings/clock/mchp_pic32cz_ca_clock.h>
+ 
+ / {
+-	aliases {
+-		watchdog0 = &wdt;
+-	};
+-
+ 	cpus {
+ 		#address-cells = <1>;
+ 		#size-cells = <0>;
+@@ -124,20 +120,6 @@
+ 			};
+ 		};
+ 
+-		wdt: watchdog@44070000 {
+-			compatible = "microchip,wdt-g1";
+-			reg = <0x44070000 13>;
+-			interrupts = <14 0>;
+-			interrupt-names = "wdt-ew";
+-			clocks = <&mclkperiph CLOCK_MCHP_MCLKPERIPH_ID_WDT>;
+-			clock-names = "mclk";
+-			max-installable-timeout-count = <1>;
+-			max-timeout-window = <0x4000>;
+-			max-timeout-window-mode = <0x8000>;
+-			min-window-limit = <0x8>;
+-			status = "disabled";
+-		};
+-
+ 		pinctrl: pinctrl@44840000 {
+ 			compatible = "microchip,port-g1-pinctrl";
+ 			#address-cells = <1>;
+@@ -193,6 +175,84 @@
+ 			status = "disabled";
+ 		};
+ 
++		can0: can@45060000 {
++			compatible = "microchip,pic32cz-can";
++			reg = <0x45060000 0x100>;
++			reg-names = "m_can";
++			interrupts = <194 0>;
++			interrupt-names = "int0";
++			clocks = <&mclkperiph CLOCK_MCHP_MCLKPERIPH_ID_CAN0>,
++				 <&gclkperiph CLOCK_MCHP_GCLKPERIPH_ID_CAN0>;
++			clock-names = "mclk", "gclk";
++			bosch,mram-cfg = <0x0 28 8 3 3 0 1 1>;
++			status = "disabled";
++		};
++
++		can1: can@46060000 {
++			compatible = "microchip,pic32cz-can";
++			reg = <0x46060000 0x100>;
++			reg-names = "m_can";
++			interrupts = <195 0>;
++			interrupt-names = "int0";
++			clocks = <&mclkperiph CLOCK_MCHP_MCLKPERIPH_ID_CAN1>,
++				 <&gclkperiph CLOCK_MCHP_GCLKPERIPH_ID_CAN1>;
++			clock-names = "mclk", "gclk";
++			bosch,mram-cfg = <0x0 28 8 3 3 0 1 1>;
++			status = "disabled";
++		};
++
++		can2: can@46062000 {
++			compatible = "microchip,pic32cz-can";
++			reg = <0x46062000 0x100>;
++			reg-names = "m_can";
++			interrupts = <196 0>;
++			interrupt-names = "int0";
++			clocks = <&mclkperiph CLOCK_MCHP_MCLKPERIPH_ID_CAN2>,
++				 <&gclkperiph CLOCK_MCHP_GCLKPERIPH_ID_CAN2>;
++			clock-names = "mclk", "gclk";
++			bosch,mram-cfg = <0x0 28 8 3 3 0 1 1>;
++			status = "disabled";
++		};
++
++		can3: can@45860000 {
++			compatible = "microchip,pic32cz-can";
++			reg = <0x45860000 0x100>;
++			reg-names = "m_can";
++			interrupts = <197 0>;
++			interrupt-names = "int0";
++			clocks = <&mclkperiph CLOCK_MCHP_MCLKPERIPH_ID_CAN3>,
++				 <&gclkperiph CLOCK_MCHP_GCLKPERIPH_ID_CAN3>;
++			clock-names = "mclk", "gclk";
++			bosch,mram-cfg = <0x0 28 8 3 3 0 1 1>;
++			status = "disabled";
++		};
++
++		can4: can@45062000 {
++			compatible = "microchip,pic32cz-can";
++			reg = <0x45062000 0x100>;
++			reg-names = "m_can";
++			interrupts = <198 0>;
++			interrupt-names = "int0";
++			clocks = <&mclkperiph CLOCK_MCHP_MCLKPERIPH_ID_CAN4>,
++				 <&gclkperiph CLOCK_MCHP_GCLKPERIPH_ID_CAN4>;
++			clock-names = "mclk", "gclk";
++			bosch,mram-cfg = <0x0 28 8 3 3 0 1 1>;
++			status = "disabled";
++		};
++
++		can5: can@46860000 {
++			compatible = "microchip,pic32cz-can";
++			reg = <0x46860000 0x100>;
++			reg-names = "m_can";
++			interrupts = <199 0>;
++			interrupt-names = "int0";
++			clocks = <&mclkperiph CLOCK_MCHP_MCLKPERIPH_ID_CAN5>,
++				 <&gclkperiph CLOCK_MCHP_GCLKPERIPH_ID_CAN5>;
++			clock-names = "mclk", "gclk";
++			bosch,mram-cfg = <0x0 28 8 3 3 0 1 1>;
++			status = "disabled";
++		};
++
+ 		sercom2: sercom@45800000 {
+ 			compatible = "microchip,sercom-g1";
+ 			reg = <0x45800000 0x36>;
+diff --git a/dts/bindings/can/microchip,pic32cz-can.yaml b/dts/bindings/can/microchip,pic32cz-can.yaml
+new file mode 100644
+index 00000000000..b54bf4f8a17
+--- /dev/null
++++ b/dts/bindings/can/microchip,pic32cz-can.yaml
+@@ -0,0 +1,34 @@
++# Copyright (c) 2026
++# SPDX-License-Identifier: Apache-2.0
++
++description: |
++  Microchip PIC32CZ CA CAN FD controller (Bosch M_CAN based).
++
++  The message RAM is allocated in system SRAM by the driver; the Microchip
++  MRCFG wrapper register supplies address bits [23:16] of the message RAM
++  base, so the whole message RAM must fit within a single 64 KiB window.
++
++compatible: "microchip,pic32cz-can"
++
++include:
++  - name: bosch,m_can-base.yaml
++  - name: pinctrl-device.yaml
++
++properties:
++  reg:
++    required: true
++
++  interrupts:
++    required: true
++
++  interrupt-names:
++    required: true
++
++  clocks:
++    required: true
++    description: |
++      MCLK (bus clock enable) and GCLK (core clock channel) entries from the
++      pic32cz-ca clock controller.
++
++  clock-names:
++    required: true

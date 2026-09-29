@@ -50,10 +50,20 @@ pip install -r requirements.txt
 ### Zephyr
 To setup Zephyr follow the steps in the [Zephyr getting started guide](https://docs.zephyrproject.org/latest/develop/getting_started/index.html).
 
-## Build & run
-
+Once you have done that, you will have to apply some diffs to get CAN working for our custom board. Run the following command to apply the diff file to your newly created Zephyr workspace:
+```
+cd zephyr
+git apply ../zephyr-can-patch.diff
 ```
 
+Now Zephyr should be setup and ready to use!
+
+## Build & run
+
+Hopefully if everything in the previous section went well, you can now build the example app in [app](app)
+```
+cd app
+west build -p always -b mega_can .
 ```
 
 Then **power-cycle the board** to run it (see "How this board boots").
