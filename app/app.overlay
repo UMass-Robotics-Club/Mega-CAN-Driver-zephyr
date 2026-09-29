@@ -1,0 +1,40 @@
+/* Gateway: Ethernet (MAC + MDIO + KSZ9031) and the four motor buses. */
+#include "../boards/microchip/mega_can/mega_can-gmac.dtsi"
+
+&gmac {
+	status = "okay";
+};
+
+&eth_mdio {
+	status = "okay";
+};
+
+&eth_phy {
+	status = "okay";
+};
+
+&portd {
+	status = "okay";
+};
+
+&porte {
+	status = "okay";
+};
+
+/* motors: can0..can3 (classic 1 Mbit/s, from the board) */
+&can1 {
+	status = "okay";
+};
+
+&can2 {
+	status = "okay";
+};
+
+&can3 {
+	status = "okay";
+};
+
+/* can5 is only the bring-up loopback partner; not used here */
+&can5 {
+	status = "disabled";
+};

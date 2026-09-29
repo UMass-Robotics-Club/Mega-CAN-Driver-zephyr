@@ -1,0 +1,117 @@
+/*
+ * Ethernet for mega_can: on-chip ETH MAC + KSZ9031MNX PHY over GMII.
+ *
+ * Driver: module/drivers/ethernet/eth_mchp_pic32cz.c (compatible
+ * "microchip,pic32cz-eth", a port of Zephyr's eth_mchp_gmac_g1). Not part of
+ * the board by default: an Ethernet app includes this file from its overlay,
+ * enables the nodes, and adds ../module to ZEPHYR_EXTRA_MODULES. That keeps
+ * PLL1 and everything below out of builds that don't use Ethernet (bringup/).
+ *
+ * All pins verified against GIGE.pdf (MCU sheet p.3, Ethernet sheet p.7) and
+ * the datasheet ball map; see CLAUDE.md "Hardware" and PHYSICAL_CONCERNS.md.
+ *
+ * Devicetree note (found by a failed build 2026-09-07): the MAC node must be
+ * a child of soc {}, because interrupt-parent = <&nvic> is set on soc, not on
+ * the root. Re-opening soc by name merges into the existing node.
+ */
+
+/*
+ * 125 MHz gigabit transmit clock (GCLK channel 54, CLK_GMAC_TX).
+ * PLL0 runs its VCO at 960 MHz, and 960/125 isn't whole, so use PLL1:
+ * 24 MHz / REFDIV 3 = 8 MHz FPFD (4-48 OK) x FBDIV 125 = 1000 MHz VCO
+ * (800-1600 OK), / 8 = 125.000 MHz on PLL1 output 2 -> GCLK generator 3.
+ * Exact, so its accuracy is the 24 MHz oscillator's (datasheet asks <= 50 ppm).
+ */
+&dpll1 {
+	dpll-bandwidth-sel = "4mhz-10mhz";
+	dpll-ref-division-factor = <3>;
+	dpll-feedback-divider-factor = <125>;
+	dpll-src = "xosc";
+	dpll-en = <1>;
+
+	dpll1out2: dpll1out2 {
+		subsystem = <CLOCK_MCHP_DPLL1_ID_OUT2>;
+		dpll-output-division-factor = <8>;
+		dpll-output-en = <1>;
+	};
+};
+
+&gclkgen {
+	gclkgen3 {
+		subsystem = <CLOCK_MCHP_GCLKGEN_ID_GEN3>;
+		gclkgen-div-factor = <1>;
+		gclkgen-src = "pll1-clkout2";
+		gclkgen-en = <1>;
+	};
+};
+
+&gclkperiph {
+	gmac_tx {
+		subsystem = <CLOCK_MCHP_GCLKPERIPH_ID_GMAC_TX>;
+		gclkperiph-src = "gclk3";
+		gclkperiph-en = <1>;
+	};
+};
+
+/ {
+	soc {
+		gmac: ethernet@45070000 {
+			compatible = "microchip,pic32cz-eth";
+			/* wrapper at 0x000, GEM core at 0x1000-0x1703 */
+			reg = <0x45070000 0x2000>;
+			/* the driver wires only queue 0 (IRQ 202 of 202-207) */
+			interrupts = <202 0>;
+			interrupt-names = "gmac";
+			num-queues = <1>;
+			clocks = <&mclkperiph CLOCK_MCHP_MCLKPERIPH_ID_GMAC_AHB>,
+				 <&mclkperiph CLOCK_MCHP_MCLKPERIPH_ID_GMAC_APB>;
+			clock-names = "mclk-ahb", "mclk-apb";
+			phy-connection-type = "gmii";
+			phy-handle = <&eth_phy>;
+			/* locally administered (02:...), "MCAN" + 01 */
+			local-mac-address = [02 4d 43 41 4e 01];
+
+			pinctrl-0 = <&gmac_default>;
+			pinctrl-1 = <&gmac_txck_mii>;
+			pinctrl-2 = <&gmac_txck_gmii>;
+			pinctrl-names = "default", "mii", "gmii";
+
+			/* U4 SEL: high = PHY TX_CLK joined to PD5 (10/100) */
+			txclk-sel-gpios = <&porta 22 GPIO_ACTIVE_HIGH>;
+
+			/* PE7 -> R60 270R -> PHY RESET_N (10k/100nF power-on RC) */
+			phy-reset-gpios = <&porte 7 GPIO_ACTIVE_LOW>;
+			/*
+			 * Unresistored KSZ9031 straps: MODE0..3 = 1,0,0,0 (GMII/MII),
+			 * CLK125_EN = 0, PHYAD2 = 0. With PHYAD1/0 = 1/1 from the LED
+			 * pull-ups the PHY lands at MDIO address 3.
+			 */
+			phy-strap-gpios = <&portd 11 0>, <&portd 10 0>, <&portd 7 0>,
+					  <&portd 6 0>, <&porta 5 0>, <&portd 12 0>;
+			phy-strap-values = <1 0 0 0 0 0>;
+
+			status = "disabled";
+		};
+	};
+
+	/*
+	 * MDIO bit-banged on PA3/PA4 (GMDC/GMDIO pins, R58 4.7k pull-up on MDIO).
+	 * Independent of the MAC's init order, and the same path phyprobe/
+	 * tests. The hardware MDIO block (mdio_mchp_gmac_g1) is a later port.
+	 */
+	eth_mdio: mdio {
+		compatible = "zephyr,mdio-gpio";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		mdc-gpios = <&porta 3 GPIO_ACTIVE_HIGH>;
+		mdio-gpios = <&porta 4 GPIO_ACTIVE_HIGH>;
+		status = "disabled";
+
+		/* address 3 is expected; phyprobe prints the real one */
+		eth_phy: ethernet-phy@3 {
+			compatible = "ethernet-phy";
+			reg = <3>;
+			status = "disabled";
+		};
+	};
+};

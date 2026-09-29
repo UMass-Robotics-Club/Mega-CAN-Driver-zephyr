@@ -1,0 +1,13 @@
+/* Motor buses can0-can3 (board: classic 1 Mbit/s, disabled by default).
+ * can0 is already on in the board for the bring-up loopback. */
+&can1 {
+	status = "okay";
+};
+
+&can2 {
+	status = "okay";
+};
+
+&can3 {
+	status = "okay";
+};

@@ -1,0 +1,10 @@
+# Out-of-tree Zephyr module for the mega_can board: drivers Zephyr doesn't have
+# (yet) for the PIC32CZ CA. Apps pull it in with
+#   list(APPEND ZEPHYR_EXTRA_MODULES ${CMAKE_CURRENT_SOURCE_DIR}/../module)
+# Files mirror Zephyr's own tree layout so they can move upstream as a PR.
+name: mega_can
+build:
+  cmake: .
+  kconfig: Kconfig
+  settings:
+    dts_root: .

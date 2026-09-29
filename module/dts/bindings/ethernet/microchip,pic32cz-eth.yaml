@@ -1,0 +1,68 @@
+# Copyright (c) 2026 Microchip Technology Inc.
+# Copyright (c) 2026 UMass Robotics Club
+# SPDX-License-Identifier: Apache-2.0
+
+title: Microchip PIC32CZ CA ETH (GMAC) Ethernet controller
+
+description: |
+  PIC32CZ CA8x/CA9x ETH peripheral: a Cadence GEM MAC core (same core as the
+  "microchip,gmac-g1-eth" parts, at offset 0x1000) behind a wrapper with
+  CTRLA (enable/reset) and CTRLB (GMII select, gigabit clock request).
+
+  In GMII mode the transmit clock changes direction with link speed: at
+  1000 Mbit/s the MAC drives GTXCK (125 MHz, GCLK channel 54), at 10/100 the
+  PHY drives TX_CLK into the MAC. Boards that share one MAC pin between the
+  two through an analog switch describe the switch with txclk-sel-gpios and
+  provide "mii" and "gmii" pinctrl states for that pin.
+
+compatible: "microchip,pic32cz-eth"
+
+include:
+  - name: ethernet-controller.yaml
+  - name: pinctrl-device.yaml
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true
+
+  phy-handle:
+    required: true
+
+  num-queues:
+    type: int
+    required: true
+    description: |
+      Number of hardware TX/RX queues used. Only 1 is supported for now.
+
+  phy-connection-type:
+    default: "gmii"
+
+  clocks:
+    type: phandle-array
+
+  txclk-sel-gpios:
+    type: phandle-array
+    description: |
+      Select line of an analog switch that connects the PHY's MII TX_CLK
+      output to the MAC's transmit clock pin. Active = connected (10/100).
+      Driven inactive before the MAC drives GTXCK (1000).
+
+  phy-reset-gpios:
+    type: phandle-array
+    description: |
+      PHY reset line. Used by the strap hook, before the PHY driver runs.
+
+  phy-strap-gpios:
+    type: phandle-array
+    description: |
+      PHY strap pins that have no resistor on the board. While the PHY is
+      held in reset, each is given an MCU pull (not driven) to the level in
+      phy-strap-values; pulls are removed after reset is released.
+
+  phy-strap-values:
+    type: array
+    description: |
+      One entry (0 or 1) per phy-strap-gpios entry.

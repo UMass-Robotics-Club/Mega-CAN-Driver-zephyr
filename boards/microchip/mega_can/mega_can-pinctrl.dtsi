@@ -30,10 +30,100 @@
 		};
 	};
 
+	/* CAN1-CAN4 pins from GIGE.pdf p.3 net names (ball_port_signal),
+	 * added 2026-09-28 for the motor buses. */
+	can1_default: can1_default {
+		group1 {
+			pinmux = <PC7H_CAN1_TX>,  /* N18 */
+				 <PC6H_CAN1_RX>;  /* N17 */
+		};
+	};
+
+	can2_default: can2_default {
+		group1 {
+			pinmux = <PC26H_CAN2_TX>, /* K18 */
+				 <PC25H_CAN2_RX>; /* K17 */
+		};
+	};
+
+	can3_default: can3_default {
+		group1 {
+			pinmux = <PD13H_CAN3_TX>, /* B11 */
+				 <PC29H_CAN3_RX>; /* E18 */
+		};
+	};
+
+	can4_default: can4_default {
+		group1 {
+			pinmux = <PA31H_CAN4_TX>, /* G2 */
+				 <PA30H_CAN4_RX>; /* F2 */
+		};
+	};
+
 	can5_default: can5_default {
 		group1 {
 			pinmux = <PA21H_CAN5_TX>,
 				 <PD23H_CAN5_RX>;
+		};
+	};
+
+	/*
+	 * GMAC (Ethernet), full GMII bus. Pins from the schematic (GIGE.pdf p.3,
+	 * p.7), rechecked 2026-09-28 against the datasheet ball map:
+	 *   - PA21 (a TXCK option) is NOT used - it's CAN5_TX above.
+	 *   - PD5 is the only GTXCK pin on this package and also a TXCK option,
+	 *     so it carries the transmit clock at every speed and is NOT in the
+	 *     default state. The driver applies "mii" (PD5K, TXCK input from the
+	 *     PHY's TX_CLK via switch U4) or "gmii" (PD5L, 125 MHz GTXCK output)
+	 *     per link speed, together with the switch select PA22.
+	 *   - PD12 (PHY RX_CLK) uses function L = GMAC_GRXCK (datasheet Table
+	 *     6-11 / ball B1). Function K is GREFCK, the RMII reference clock.
+	 *     The HAL header names both PD12K and PD12L "ETH_GREFCK"; L is right.
+	 *   - PA3/PA4 (GMDC/GMDIO) are not here: MDIO is bit-banged on them as
+	 *     GPIOs (mega_can-gmac.dtsi), same as phyprobe/.
+	 *   - PA22 = ETH_TX_CLK_EN (U4 SEL) and PA23 = ETH_INT_N are GPIOs, not
+	 *     pinmux. (An older version of this comment called PA22 ETH_INT_N /
+	 *     TSUCOMP; that was a transcription error.)
+	 */
+	gmac_default: gmac_default {
+		group1 {
+			pinmux = <PA0K_ETH_GTX1>,
+				 <PA1K_ETH_GTX0>,
+				 <PA2K_ETH_GTXEN>,
+				 <PA5K_ETH_GRXDV>,
+				 <PA6K_ETH_GRXER>,
+				 <PD2K_ETH_GTXER>,
+				 <PD3K_ETH_GTX3>,
+				 <PD4K_ETH_GTX2>,
+				 <PD6K_ETH_GRX3>,
+				 <PD7K_ETH_GRX2>,
+				 <PD8K_ETH_GCOL>,
+				 <PD9K_ETH_GCRS>,
+				 <PD10K_ETH_GRX1>,
+				 <PD11K_ETH_GRX0>,
+				 <PD12L_ETH_GREFCK>, /* = GRXCK, see above */
+				 <PD14K_ETH_GTX7>,
+				 <PD15K_ETH_GTX6>,
+				 <PD16K_ETH_GTX5>,
+				 <PD17K_ETH_GTX4>,
+				 <PD18K_ETH_GRX7>,
+				 <PD19K_ETH_GRX6>,
+				 <PD20K_ETH_GRX4>,
+				 <PD21K_ETH_GRX5>;
+		};
+	};
+
+	/* Transmit clock pin, 10/100: TXCK input (PHY TX_CLK through U4) */
+	gmac_txck_mii: gmac_txck_mii {
+		group1 {
+			pinmux = <PD5K_ETH_TXCK>;
+		};
+	};
+
+	/* Transmit clock pin, 1000: GTXCK 125 MHz output to PHY GTX_CLK */
+	gmac_txck_gmii: gmac_txck_gmii {
+		group1 {
+			pinmux = <PD5L_ETH_GTXCK>;
 		};
 	};
 };
